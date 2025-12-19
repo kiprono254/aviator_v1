@@ -1,0 +1,11 @@
+{
+  "telegram_token": "8368454491:AAHt21WGsWVRhNmQ9z5MYfWPcsHWATn4qQ4",
+  "betika_username": "0713083697",
+  "betika_password": "manuel254",
+  "target_multipliers": [1.5, 2, 3, 4, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 1000],
+  "rooms": {
+    "room1": {"url": "https://www.betika.com/en-ke/aviator?room=1", "focus": "1.5x-5x"},
+    "room2": {"url": "https://www.betika.com/en-ke/aviator?room=2", "focus": "5x-20x"},
+    "room3": {"url": "https://www.betika.com/en-ke/aviator?room=3", "focus": "20x-1000x+"}
+  }
+}
