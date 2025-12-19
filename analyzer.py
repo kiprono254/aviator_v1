@@ -2,6 +2,7 @@ import random
 from datetime import datetime
 import json
 import os
+import time
 
 class AviatorAnalyzer:
     def __init__(self):
@@ -12,150 +13,167 @@ class AviatorAnalyzer:
         }
         self.targets = [1.5, 2, 3, 4, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 1000]
         self.load_histories()
-        
+        self.prediction_cache = {}
+    
     def load_histories(self):
+        """Load historical data for each room"""
         for room in ['room1', 'room2', 'room3']:
             filename = f"{room}_data.json"
             if os.path.exists(filename):
-                with open(filename, 'r') as f:
-                    self.room_histories[room] = json.load(f)
+                try:
+                    with open(filename, 'r') as f:
+                        self.room_histories[room] = json.load(f)
+                    print(f"Loaded {len(self.room_histories[room])} records for {room}")
+                except:
+                    self.room_histories[room] = []
+            else:
+                self.room_histories[room] = []
     
     def get_prediction(self, room_name):
+        """Generate prediction for a specific room"""
         try:
-            latest_data = self.simulate_room_scraping(room_name)
-            self.room_histories[room_name].append(latest_data)
+            # Simulate getting live data (replace with actual scraping)
+            live_data = self.simulate_live_data(room_name)
             
+            # Add to history
+            self.room_histories[room_name].append(live_data)
+            
+            # Keep only last 1000 records
             if len(self.room_histories[room_name]) > 1000:
                 self.room_histories[room_name] = self.room_histories[room_name][-1000:]
             
+            # Save to file
             self.save_room_history(room_name)
             
-            return self.analyze_room_patterns(room_name)
+            # Analyze patterns
+            return self.analyze_patterns(room_name)
             
         except Exception as e:
-            print(f"Error in get_prediction for {room_name}: {e}")
+            print(f"Prediction error for {room_name}: {e}")
             return self.get_fallback_prediction(room_name)
     
-    def simulate_room_scraping(self, room_name):
-        room_ranges = {
-            'room1': (1.0, 10.0),
-            'room2': (1.0, 25.0),
-            'room3': (1.0, 100.0)
+    def simulate_live_data(self, room_name):
+        """Simulate live data from Betika (REPLACE WITH ACTUAL SCRAPING)"""
+        # Room-specific behavior
+        room_profiles = {
+            'room1': {'min': 1.0, 'max': 10.0, 'volatility': 0.5},
+            'room2': {'min': 1.0, 'max': 25.0, 'volatility': 1.0},
+            'room3': {'min': 1.0, 'max': 100.0, 'volatility': 2.0}
         }
         
-        min_val, max_val = room_ranges.get(room_name, (1.0, 5.0))
+        profile = room_profiles.get(room_name, {'min': 1.0, 'max': 5.0, 'volatility': 0.5})
+        
+        # Generate multiplier with some randomness
+        base = random.uniform(profile['min'], profile['max'] / 2)
+        volatility = random.uniform(0, profile['volatility'])
+        multiplier = base * (1 + volatility)
+        
+        # Occasionally generate very high multipliers
+        if random.random() < 0.05:  # 5% chance
+            multiplier = random.uniform(profile['max'] * 0.7, profile['max'] * 1.3)
         
         return {
             'timestamp': datetime.now().isoformat(),
-            'multiplier': random.uniform(min_val, max_val),
-            'round_id': len(self.room_histories[room_name]) + 1,
-            'room': room_name
+            'multiplier': round(multiplier, 2),
+            'room': room_name,
+            'round_id': len(self.room_histories[room_name]) + 1
         }
     
-    def analyze_room_patterns(self, room_name):
+    def analyze_patterns(self, room_name):
+        """Analyze historical patterns for predictions"""
         history = self.room_histories[room_name]
         
-        if len(history) < 30:
+        if len(history) < 10:
             return self.get_fallback_prediction(room_name)
         
-        recent = history[-30:]
+        # Get recent multipliers
+        recent_count = min(30, len(history))
+        recent = history[-recent_count:]
         multipliers = [d['multiplier'] for d in recent]
         
-        avg = sum(multipliers) / len(multipliers)
-        max_val = max(multipliers)
+        # Calculate statistics
+        avg_multiplier = sum(multipliers) / len(multipliers)
+        max_recent = max(multipliers)
+        min_recent = min(multipliers)
         
-        room_trends = {
-            'room1': ['STEADY', 'VOLATILE', 'RISING', 'SAFE'],
-            'room2': ['AGGRESSIVE', 'UNPREDICTABLE', 'SURGING', 'BALANCED'],
-            'room3': ['EXTREME', 'EXPLOSIVE', 'RAPID', 'HIGH RISK']
-        }
+        # Determine trend
+        trend = self.determine_trend(multipliers)
         
-        trend = self.determine_trend(multipliers, room_name)
+        # Calculate confidence
+        confidence = self.calculate_confidence(multipliers, len(history))
         
+        # Generate prediction
         prediction = {
             'timestamp': datetime.now().isoformat(),
             'room': room_name,
             'trend': trend,
-            'confidence': self.calculate_confidence(multipliers, room_name),
-            'recent_high': max_val,
-            'volatility': self.calculate_volatility(multipliers)
+            'confidence': confidence,
+            'recent_high': max_recent,
+            'recent_low': min_recent,
+            'average': round(avg_multiplier, 2),
+            'data_points': len(multipliers)
         }
         
+        # Calculate probabilities for each target
         for target in self.targets:
-            prob = self.calculate_room_probability(target, multipliers, avg, room_name)
-            prediction[f'prob_{target}x'] = prob
+            probability = self.calculate_probability(target, multipliers, avg_multiplier, room_name)
+            prediction[f'prob_{target}x'] = round(probability, 3)
         
         return prediction
     
-    def determine_trend(self, multipliers, room_name):
+    def determine_trend(self, multipliers):
+        """Determine the current trend"""
         if len(multipliers) < 5:
             return "ANALYZING"
         
+        # Check last 5 values
         last_5 = multipliers[-5:]
         
-        if all(last_5[i] <= last_5[i+1] for i in range(len(last_5)-1)):
+        # Check if consistently rising
+        rising = all(last_5[i] <= last_5[i+1] for i in range(len(last_5)-1))
+        if rising:
             return "STRONG UP"
-        elif all(last_5[i] >= last_5[i+1] for i in range(len(last_5)-1)):
+        
+        # Check if consistently falling
+        falling = all(last_5[i] >= last_5[i+1] for i in range(len(last_5)-1))
+        if falling:
             return "STRONG DOWN"
         
+        # Count ups and downs
         up_count = sum(1 for i in range(len(last_5)-1) if last_5[i] < last_5[i+1])
         
         if up_count >= 3:
             return "UPWARD"
         elif up_count <= 1:
             return "DOWNWARD"
+        
         return "VOLATILE"
     
-    def calculate_confidence(self, multipliers, room_name):
-        if len(multipliers) < 10:
-            return 0.3
-        
+    def calculate_confidence(self, multipliers, total_history):
+        """Calculate confidence level"""
         base_confidence = 0.5
         
-        volatility = self.calculate_volatility(multipliers)
-        
-        if volatility < 1.0:
+        # More data = more confidence
+        if total_history >= 100:
             base_confidence += 0.2
+        elif total_history >= 50:
+            base_confidence += 0.1
+        
+        # Check volatility
+        volatility = self.calculate_volatility(multipliers)
+        if volatility < 1.0:
+            base_confidence += 0.1
         elif volatility > 3.0:
             base_confidence -= 0.1
         
-        recent_5x = sum(1 for m in multipliers[-10:] if m >= 5)
-        if recent_5x >= 3:
+        # Check for clear patterns
+        if self.has_clear_pattern(multipliers):
             base_confidence += 0.15
         
         return min(max(base_confidence, 0.1), 0.95)
     
-    def calculate_room_probability(self, target, multipliers, avg, room_name):
-        if len(multipliers) < 5:
-            return 0.1
-        
-        recent_count = min(20, len(multipliers))
-        recent = multipliers[-recent_count:]
-        
-        near_target = sum(1 for m in recent if m >= target * 0.7)
-        ratio = near_target / recent_count
-        
-        room_boost = {
-            'room1': {1.5: 1.8, 2: 1.6, 3: 1.4, 4: 1.2, 5: 1.5, 10: 0.8, 20: 0.6, 30: 0.4, 40: 0.3, 50: 0.2, 60: 0.2, 70: 0.2, 80: 0.2, 90: 0.1, 100: 0.1, 1000: 0.05},
-            'room2': {1.5: 1.3, 2: 1.4, 3: 1.5, 4: 1.6, 5: 1.8, 10: 1.5, 20: 1.2, 30: 1.0, 40: 0.8, 50: 0.7, 60: 0.6, 70: 0.5, 80: 0.4, 90: 0.3, 100: 0.3, 1000: 0.2},
-            'room3': {1.5: 0.8, 2: 0.9, 3: 1.0, 4: 1.1, 5: 1.2, 10: 1.5, 20: 1.8, 30: 2.0, 40: 2.2, 50: 2.3, 60: 2.4, 70: 2.5, 80: 2.6, 90: 2.7, 100: 2.8, 1000: 3.0}
-        }
-        
-        boost = room_boost.get(room_name, {}).get(target, 1.0)
-        
-        volatility = self.calculate_volatility(recent)
-        volatility_factor = 1.0 + (volatility * 0.1)
-        
-        if target == 5:
-            recent_5x_hits = sum(1 for m in recent if m >= 4.5 and m <= 5.5)
-            if recent_5x_hits > 0:
-                boost *= 1.3
-        
-        base_prob = min(ratio * 2.5 * boost * volatility_factor, 0.95)
-        
-        return base_prob
-    
     def calculate_volatility(self, multipliers):
+        """Calculate volatility of multipliers"""
         if len(multipliers) < 2:
             return 0.0
         
@@ -163,14 +181,69 @@ class AviatorAnalyzer:
         variance = sum((x - mean) ** 2 for x in multipliers) / len(multipliers)
         return variance ** 0.5
     
+    def has_clear_pattern(self, multipliers):
+        """Check for clear patterns in data"""
+        if len(multipliers) < 10:
+            return False
+        
+        # Simple pattern detection
+        # Check for clustering of similar values
+        clusters = 0
+        threshold = 1.0
+        
+        for i in range(len(multipliers) - 1):
+            if abs(multipliers[i] - multipliers[i+1]) < threshold:
+                clusters += 1
+        
+        return clusters / len(multipliers) > 0.6
+    
+    def calculate_probability(self, target, multipliers, average, room_name):
+        """Calculate probability of reaching target multiplier"""
+        if len(multipliers) < 5:
+            return 0.1
+        
+        # Room-specific base probabilities
+        room_bases = {
+            'room1': {t: 0.3 if t <= 5 else 0.1 for t in self.targets},
+            'room2': {t: 0.4 if t <= 20 else 0.2 for t in self.targets},
+            'room3': {t: 0.5 if t >= 20 else 0.3 for t in self.targets}
+        }
+        
+        base_prob = room_bases.get(room_name, {}).get(target, 0.2)
+        
+        # Adjust based on recent performance
+        recent_hits = sum(1 for m in multipliers if m >= target * 0.7)
+        hit_ratio = recent_hits / len(multipliers)
+        
+        # Adjust based on average
+        avg_factor = 1.0
+        if average > target * 0.5:
+            avg_factor = 1.2
+        elif average > target * 0.3:
+            avg_factor = 1.1
+        
+        # Calculate final probability
+        probability = base_prob * (1 + hit_ratio) * avg_factor
+        
+        # Special boost for 5x
+        if target == 5:
+            near_5x = sum(1 for m in multipliers if 4 <= m <= 6)
+            if near_5x > 0:
+                probability *= 1.3
+        
+        return min(probability, 0.95)
+    
     def get_fallback_prediction(self, room_name):
+        """Fallback prediction when insufficient data"""
         prediction = {
             'timestamp': datetime.now().isoformat(),
             'room': room_name,
-            'trend': 'ANALYZING',
+            'trend': 'INSUFFICIENT_DATA',
             'confidence': 0.2,
             'recent_high': 0,
-            'volatility': 0
+            'recent_low': 0,
+            'average': 0,
+            'data_points': 0
         }
         
         for target in self.targets:
@@ -179,6 +252,10 @@ class AviatorAnalyzer:
         return prediction
     
     def save_room_history(self, room_name):
+        """Save room history to file"""
         filename = f"{room_name}_data.json"
-        with open(filename, 'w') as f:
-            json.dump(self.room_histories[room_name][-1000:], f)
+        try:
+            with open(filename, 'w') as f:
+                json.dump(self.room_histories[room_name][-500:], f, indent=2)
+        except Exception as e:
+            print(f"Save error for {room_name}: {e}")
